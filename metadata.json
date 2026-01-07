@@ -1,0 +1,5 @@
+{
+  "name": "Copy of Arbitrage Profit Master",
+  "description": "A web application that allows users to upload a CSV file of Amazon products, performs live price research using a user-provided API key, and calculates profitability automatically.",
+  "requestFramePermissions": []
+}

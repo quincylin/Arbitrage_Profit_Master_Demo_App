@@ -4,58 +4,39 @@ import requests
 import time
 
 # --- APP CONFIGURATION ---
-st.set_page_config(
-    page_title="Arbitrage Profit Master V10",
-    page_icon="💰",
-    layout="wide"
-)
+st.set_page_config(page_title="Arbitrage Profit Master V10", page_icon="💰", layout="wide")
 
-# --- CUSTOM CSS (Fixed Layout using Flexbox) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
     .block-container { padding-top: 1rem; }
-    
-    /* CARD CONTAINER */
     .product-card {
-        background-color: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 12px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        display: flex;
-        flex-wrap: wrap; /* Allows stacking on small screens */
-        gap: 15px;
-        align-items: flex-start;
+        background-color: white; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 15px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-start;
     }
-    
-    /* COLUMNS */
     .col-img { flex: 0 0 80px; }
-    .col-details { flex: 2 1 250px; } /* Grows, min width 250px */
+    .col-details { flex: 2 1 250px; }
     .col-amazon { flex: 1 1 120px; border-left: 1px solid #f1f5f9; padding-left: 12px; }
     .col-cogs { flex: 1 1 150px; border-left: 1px solid #f1f5f9; padding-left: 12px; }
     .col-profit { flex: 1 1 120px; border-left: 1px solid #f1f5f9; padding-left: 12px; }
-
-    /* IMAGE ZOOM */
+    
     .img-container { width: 80px; height: 80px; position: relative; }
     .product-img {
-        width: 100%; height: 100%; object-fit: contain;
-        border-radius: 6px; border: 1px solid #f1f5f9;
-        transition: transform 0.2s ease; background: white; cursor: zoom-in;
+        width: 100%; height: 100%; object-fit: contain; border-radius: 6px;
+        border: 1px solid #f1f5f9; background: white; transition: transform 0.2s; cursor: zoom-in;
     }
     .img-container:hover .product-img {
         transform: scale(3.5); position: absolute; top: 0; left: 0; z-index: 999;
         box-shadow: 0 10px 20px rgba(0,0,0,0.2); border: 1px solid #cbd5e1;
     }
 
-    /* TEXT STYLES */
-    .title-text { font-weight: 700; color: #1e293b; font-size: 14px; line-height: 1.3; margin-bottom: 6px; }
+    .title-text { font-weight: 700; color: #1e293b; font-size: 14px; margin-bottom: 6px; }
     .badge { background: #f8fafc; color: #64748b; padding: 2px 5px; border-radius: 4px; font-size: 10px; border: 1px solid #e2e8f0; margin-right: 4px; }
     .price-main { font-size: 16px; font-weight: 800; color: #0f172a; }
     .fee-badge { font-size: 10px; color: #ef4444; background: #fef2f2; padding: 1px 5px; border-radius: 3px; border: 1px solid #fee2e2; }
     .profit-pos { color: #10b981; font-weight: 800; font-size: 16px; }
     .profit-neg { color: #ef4444; font-weight: 800; font-size: 16px; }
-    
     a { text-decoration: none; color: #2563eb; }
     a:hover { text-decoration: underline; }
 </style>
@@ -69,19 +50,13 @@ with st.sidebar:
     if api_key:
         if st.button("🔑 Verify Key"):
             try:
-                # Quick test
                 resp = requests.get("https://serpapi.com/search.json", params={"engine": "google_shopping", "q": "test", "api_key": api_key, "num": 1})
-                if resp.status_code == 200:
-                    st.success("Valid Key! ✅")
-                else:
-                    st.error(f"Invalid Key ({resp.status_code})")
-            except:
-                st.error("Connection Failed")
+                if resp.status_code == 200: st.success("Valid Key! ✅")
+                else: st.error(f"Invalid Key ({resp.status_code})")
+            except: st.error("Connection Failed")
 
     st.divider()
     show_profitable_only = st.toggle("Show Profitable Only", value=False)
-    st.divider()
-    st.caption("Data Source: Google Shopping via SerpApi")
 
 # --- HELPER FUNCTIONS ---
 def search_cogs(query, api_key):
@@ -109,8 +84,7 @@ def search_cogs(query, api_key):
             valid.sort(key=lambda x: x['price'])
             return (valid[0]['price'], valid[:2]) if valid else (0.0, [])
         return 0.0, []
-    except:
-        return 0.0, []
+    except: return 0.0, []
 
 # --- MAIN APP ---
 st.title("Arbitrage Profit Master V10")
@@ -121,28 +95,24 @@ uploaded_file = st.file_uploader("Upload Keepa Export CSV", type=['csv'])
 if uploaded_file:
     try:
         df = pd.read_csv(uploaded_file)
-        
-        # --- CLEANING ---
         cols = df.columns
-        # Flexible column finding
+        
+        # Flexible column mapping
         price_col = next((c for c in cols if 'Buy Box' in c), None)
         fee_col = next((c for c in cols if 'Pick&Pack' in c or 'Fee' in c), None)
         upc_col = next((c for c in cols if 'UPC' in c or 'Codes' in c), None)
 
-        # Default to 0 if columns missing
         df['Buy Box Price'] = pd.to_numeric(df[price_col], errors='coerce').fillna(0) if price_col else 0.0
         df['FBA Fee'] = pd.to_numeric(df[fee_col], errors='coerce').fillna(0) if fee_col else 0.0
         
         if 'Image' in df.columns:
             df['Image_URL'] = df['Image'].apply(lambda x: str(x).split(';')[0] if pd.notnull(x) else "")
-        else:
-            df['Image_URL'] = ""
+        else: df['Image_URL'] = ""
             
         df['ASIN'] = df['ASIN'].fillna('N/A')
         df['UPC'] = df[upc_col].astype(str).replace('nan', 'N/A') if upc_col else 'N/A'
         df['Title'] = df['Title'].fillna('Unknown Product')
 
-        # --- RESEARCH LOGIC ---
         if api_key:
             if "results_v10" not in st.session_state:
                 st.session_state["results_v10"] = []
@@ -157,28 +127,15 @@ if uploaded_file:
                 for i, row in df.iterrows():
                     status.text(f"Scanning {i+1}/{total}: {row['Title'][:40]}...")
                     
-                    # 1. API Call
                     query = row['UPC'] if row['UPC'] != 'N/A' else row['Title']
                     cogs, competitors = search_cogs(query, api_key)
                     
-                    # 2. CALCULATION
                     sell_price = row['Buy Box Price']
                     fba_fee = row['FBA Fee']
-                    
-                    # Estimate Referral Fee (15% of selling price) if not in CSV
-                    # (Standard Amazon practice)
-                    ref_fee = sell_price * 0.15
-                    
-                    # 5% Buffer on COGS
+                    ref_fee = sell_price * 0.15 # Est 15% ref fee
                     buffer = cogs * 0.05
-                    
-                    # Total Cost
                     total_expenses = cogs + buffer + fba_fee + ref_fee
-                    
-                    # Net Profit
                     profit = sell_price - total_expenses
-                    
-                    # ROI
                     roi = (profit / cogs * 100) if cogs > 0 else 0.0
 
                     data_list.append({
@@ -187,4 +144,78 @@ if uploaded_file:
                         "ASIN": row['ASIN'],
                         "UPC": row['UPC'],
                         "Buy_Box_Raw": sell_price,
-                        "Fees_Raw": f
+                        "Fees_Raw": fba_fee,
+                        "Ref_Fee_Raw": ref_fee,
+                        "COGS_Raw": cogs,
+                        "Buffer_Raw": buffer,
+                        "Profit_Raw": profit,
+                        "ROI_Raw": roi,
+                        "Competitors": competitors
+                    })
+                    
+                    progress.progress((i + 1) / total)
+                    time.sleep(0.2)
+                
+                st.session_state["results_v10"] = data_list
+                status.success("Done!")
+                st.rerun()
+
+        if "results_v10" in st.session_state and st.session_state["results_v10"]:
+            results = st.session_state["results_v10"]
+            
+            # Export
+            export_data = []
+            for r in results:
+                comp_str = " | ".join([f"{c['store']}: ${c['price']:.2f}" for c in r['Competitors']])
+                export_data.append({
+                    "Title": r['Title'], "ASIN": r['ASIN'], "UPC": r['UPC'],
+                    "Buy Box": f"${r['Buy_Box_Raw']:.2f}", "COGS": f"${r['COGS_Raw']:.2f}",
+                    "Buffer (5%)": f"${r['Buffer_Raw']:.2f}", "FBA Fees": f"${r['Fees_Raw']:.2f}",
+                    "Ref Fees": f"${r['Ref_Fee_Raw']:.2f}", "Net Profit": f"${r['Profit_Raw']:.2f}",
+                    "ROI": f"{r['ROI_Raw']:.2f}%", "Competitors": comp_str
+                })
+            
+            col1, col2 = st.columns([1, 4])
+            with col1: st.metric("Products", len(results))
+            with col2: st.download_button("📥 Download CSV", pd.DataFrame(export_data).to_csv(index=False), "analysis.csv", "text/csv")
+
+            for p in results:
+                if show_profitable_only and p['Profit_Raw'] <= 0: continue
+                p_cls = "profit-pos" if p['Profit_Raw'] > 0 else "profit-neg"
+                p_sign = "+" if p['Profit_Raw'] > 0 else ""
+                
+                comp_html = ""
+                if p['Competitors']:
+                    for c in p['Competitors']:
+                        comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{c['link']}' target='_blank' style='font-weight:bold; font-size:11px;'>${c['price']:.2f}</a></div>"
+                else: comp_html = "<span style='color:#cbd5e1; font-size:11px;'>No Matches</span>"
+
+                st.markdown(f"""
+                <div class="product-card">
+                    <div class="col-img"><div class="img-container"><img src="{p['Image']}" class="product-img"></div></div>
+                    <div class="col-details">
+                        <div class="title-text">{p['Title']}</div>
+                        <div><span class="badge">ASIN: {p['ASIN']}</span><span class="badge">UPC: {p['UPC']}</span></div>
+                    </div>
+                    <div class="col-amazon">
+                        <div style="font-size:10px; color:#64748b;">Buy Box</div>
+                        <div class="price-main">${p['Buy_Box_Raw']:.2f}</div>
+                        <div class="fee-badge">-${p['Fees_Raw']:.2f} FBA</div>
+                    </div>
+                    <div class="col-cogs">
+                        <div style="font-size:10px; color:#64748b;">Lowest COGS</div>
+                        {comp_html}
+                        <div style="font-size:9px; color:#94a3b8; margin-top:3px;">+${p['Buffer_Raw']:.2f} (5% fee)</div>
+                    </div>
+                    <div class="col-profit">
+                        <div style="font-size:10px; color:#64748b;">Net Profit</div>
+                        <div class="{p_cls}">{p_sign}${p['Profit_Raw']:.2f}</div>
+                        <div style="font-size:11px; font-weight:bold; color:#64748b;">ROI: {p['ROI_Raw']:.2f}%</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+        elif api_key: st.info("Ready. Click 'Start Live Research' to begin.")
+        else: st.warning("Please enter your API Key in the sidebar.")
+
+    except Exception as e: st.error(f"Error: {e}")

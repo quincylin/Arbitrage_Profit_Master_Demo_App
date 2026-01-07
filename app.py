@@ -4,7 +4,7 @@ import requests
 import time
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="Arbitrage Profit Master V11", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Arbitrage Profit Master V12", page_icon="💰", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -81,9 +81,19 @@ def search_cogs(query, api_key):
             for item in results:
                 price = item.get('extracted_price', 0.0)
                 if price == 0.0: continue
+                
                 store = item.get('source', 'Unknown')
-                # Capture the deep link to the product
-                link = item.get('link', '#')
+                
+                # --- ROBUST LINK EXTRACTION (Fix for V12) ---
+                link = item.get('link') or item.get('product_link') or item.get('offer_link')
+                
+                # If link is missing, skip or fallback
+                if not link:
+                    continue 
+                
+                # If link is relative (starts with /), prepend google domain
+                if link.startswith('/'):
+                    link = f"https://www.google.com{link}"
                 
                 if not any(x in store.lower() for x in excluded):
                     valid.append({'store': store, 'price': price, 'link': link})
@@ -94,7 +104,7 @@ def search_cogs(query, api_key):
     except: return 0.0, []
 
 # --- MAIN APP ---
-st.title("Arbitrage Profit Master V11")
+st.title("Arbitrage Profit Master V12")
 st.markdown("**Live Research Dashboard**")
 
 uploaded_file = st.file_uploader("Upload Keepa Export CSV", type=['csv'])
@@ -121,11 +131,11 @@ if uploaded_file:
         df['Title'] = df['Title'].fillna('Unknown Product')
 
         if api_key:
-            if "results_v11" not in st.session_state:
-                st.session_state["results_v11"] = []
+            if "results_v12" not in st.session_state:
+                st.session_state["results_v12"] = []
 
             if st.button("🚀 Start Live Research"):
-                st.session_state["results_v11"] = [] 
+                st.session_state["results_v12"] = [] 
                 progress = st.progress(0)
                 status = st.empty()
                 total = len(df)
@@ -163,17 +173,16 @@ if uploaded_file:
                     progress.progress((i + 1) / total)
                     time.sleep(0.2)
                 
-                st.session_state["results_v11"] = data_list
+                st.session_state["results_v12"] = data_list
                 status.success("Done!")
                 st.rerun()
 
-        if "results_v11" in st.session_state and st.session_state["results_v11"]:
-            results = st.session_state["results_v11"]
+        if "results_v12" in st.session_state and st.session_state["results_v12"]:
+            results = st.session_state["results_v12"]
             
             # Export
             export_data = []
             for r in results:
-                # Competitor Links included in CSV for reference
                 comp_str = " | ".join([f"{c['store']}: ${c['price']:.2f} ({c['link']})" for c in r['Competitors']])
                 export_data.append({
                     "Title": r['Title'], "ASIN": r['ASIN'], "UPC": r['UPC'],
@@ -198,8 +207,12 @@ if uploaded_file:
                 comp_html = ""
                 if p['Competitors']:
                     for c in p['Competitors']:
-                        # DEEP LINK: c['link'] comes directly from API's product page URL
-                        comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{c['link']}' target='_blank' class='comp-link'>${c['price']:.2f} ↗</a></div>"
+                        # --- SAFE LINK RENDERING ---
+                        # Only show link if it's valid, otherwise just text
+                        if c['link'] and c['link'] != "#":
+                            comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{c['link']}' target='_blank' class='comp-link'>${c['price']:.2f} ↗</a></div>"
+                        else:
+                            comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <span style='font-weight:bold; font-size:11px; color:#1e293b;'>${c['price']:.2f}</span></div>"
                 else: comp_html = "<span style='color:#cbd5e1; font-size:11px;'>No Matches</span>"
 
                 st.markdown(f"""

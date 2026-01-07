@@ -2,9 +2,10 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
+from difflib import SequenceMatcher
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="Arbitrage Profit Master V14", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Arbitrage Profit Master V15", page_icon="💰", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -15,43 +16,43 @@ st.markdown("""
         padding: 15px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-start;
     }
-    .col-img { flex: 0 0 80px; }
+    
+    /* IMAGES */
+    .img-wrapper { display: flex; gap: 8px; flex: 0 0 170px; }
+    .img-box { width: 80px; text-align: center; }
+    .img-label { font-size: 9px; color: #64748b; margin-bottom: 2px; text-transform: uppercase; font-weight: bold; }
+    .product-img {
+        width: 80px; height: 80px; object-fit: contain; border-radius: 6px;
+        border: 1px solid #f1f5f9; background: white; cursor: zoom-in;
+    }
+    .product-img:hover { transform: scale(3.5); position: relative; z-index: 999; border: 1px solid #94a3b8; }
+
+    /* LAYOUT COLUMNS */
     .col-details { flex: 2 1 250px; }
     .col-amazon { flex: 1 1 120px; border-left: 1px solid #f1f5f9; padding-left: 12px; }
     .col-cogs { flex: 1 1 150px; border-left: 1px solid #f1f5f9; padding-left: 12px; }
     .col-profit { flex: 1 1 120px; border-left: 1px solid #f1f5f9; padding-left: 12px; }
     
-    .img-container { width: 80px; height: 80px; position: relative; }
-    .product-img {
-        width: 100%; height: 100%; object-fit: contain; border-radius: 6px;
-        border: 1px solid #f1f5f9; background: white; transition: transform 0.2s; cursor: zoom-in;
-    }
-    .img-container:hover .product-img {
-        transform: scale(3.5); position: absolute; top: 0; left: 0; z-index: 999;
-        box-shadow: 0 10px 20px rgba(0,0,0,0.2); border: 1px solid #cbd5e1;
-    }
-
     .title-text { font-weight: 700; color: #1e293b; font-size: 14px; margin-bottom: 6px; }
     .badge { background: #f8fafc; color: #64748b; padding: 2px 5px; border-radius: 4px; font-size: 10px; border: 1px solid #e2e8f0; margin-right: 4px; }
     
     .price-link { font-size: 16px; font-weight: 800; color: #0f172a; text-decoration: none; border-bottom: 1px dotted #cbd5e1; }
     .price-link:hover { color: #2563eb; border-bottom: 1px solid #2563eb; }
     
-    .fee-badge { font-size: 10px; color: #ef4444; background: #fef2f2; padding: 1px 5px; border-radius: 3px; border: 1px solid #fee2e2; }
     .profit-pos { color: #10b981; font-weight: 800; font-size: 16px; }
     .profit-neg { color: #ef4444; font-weight: 800; font-size: 16px; }
     
     .comp-link { font-weight:bold; font-size:11px; color:#2563eb; text-decoration:none; }
-    .comp-link:hover { text-decoration:underline; }
-    
-    /* New Compare Button Style */
     .compare-btn {
         display: block; margin-top: 8px; font-size: 11px; 
         color: #4f46e5; background: #eef2ff; padding: 4px 8px; 
         border-radius: 4px; text-align: center; font-weight: 600;
-        border: 1px solid #c7d2fe; transition: all 0.2s;
+        border: 1px solid #c7d2fe; transition: all 0.2s; text-decoration: none;
     }
-    .compare-btn:hover { background: #4f46e5; color: white; text-decoration: none; }
+    .compare-btn:hover { background: #4f46e5; color: white; }
+    
+    /* Mismatch Warning */
+    .mismatch-flag { color: #d97706; font-size: 10px; font-weight: bold; display: flex; align-items: center; gap: 4px; margin-top: 4px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -72,12 +73,21 @@ with st.sidebar:
     show_profitable_only = st.toggle("Show Profitable Only", value=False)
 
 # --- HELPER FUNCTIONS ---
+
+def similar(a, b):
+    """Check text similarity (0.0 to 1.0)"""
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
 def search_cogs(upc, title, api_key):
-    if not api_key: return 0.0, [], "#"
+    if not api_key: return 0.0, [], "#", ""
     
-    # --- PHASE 1: Strict UPC Search ---
-    # We prioritize UPC because it guarantees the correct product match.
-    search_query = upc if upc and upc != 'N/A' else title
+    # --- STRATEGY V15: Combined Query ---
+    # We combine UPC and Title to force Google to find pages containing BOTH.
+    # This significantly reduces "random product" matches.
+    if upc and upc != 'N/A':
+        search_query = f"{upc} {title}"
+    else:
+        search_query = title
     
     try:
         url = "https://serpapi.com/search.json"
@@ -93,22 +103,12 @@ def search_cogs(upc, title, api_key):
         
         response = requests.get(url, params=params)
         
-        # --- PHASE 2: Fallback to Title ---
-        # If UPC search yields zero results, try title immediately
-        if response.status_code == 200 and not response.json().get('shopping_results'):
-            if search_query == upc: # If we just failed a UPC search...
-                params['q'] = title # ...switch to Title
-                response = requests.get(url, params=params)
-
         if response.status_code == 200:
             data = response.json()
             valid = []
             excluded = ['ebay', 'mercari', 'poshmark', 'amazon', 'etsy']
 
-            # Capture the "Search Results Page" link (The 'Compare' Page)
-            # This is the link to the Google page showing ALL sellers.
             compare_link = data.get('search_metadata', {}).get('google_shopping_url', '#')
-
             shopping_results = data.get('shopping_results', [])
             
             for item in shopping_results:
@@ -118,26 +118,34 @@ def search_cogs(upc, title, api_key):
                 store = item.get('source', 'Unknown')
                 link = item.get('link') 
                 
-                if any(x in store.lower() for x in excluded):
-                    continue
+                # Capture the found image for visual verification
+                found_img = item.get('thumbnail', '')
+
+                if any(x in store.lower() for x in excluded): continue
                     
-                if link and link.startswith('/'):
-                    link = f"https://www.google.com{link}"
+                if link and link.startswith('/'): link = f"https://www.google.com{link}"
                 
-                valid.append({'store': store, 'price': price, 'link': link})
+                valid.append({
+                    'store': store, 
+                    'price': price, 
+                    'link': link, 
+                    'title': item.get('title', ''),
+                    'img': found_img
+                })
             
             valid.sort(key=lambda x: x['price'])
             
-            # Return: Lowest Price, Top 2 Competitors, and the Google Compare Link
-            return (valid[0]['price'], valid[:2], compare_link) if valid else (0.0, [], compare_link)
+            if valid:
+                top_match = valid[0]
+                return (top_match['price'], valid[:2], compare_link, top_match['img'])
             
-        return 0.0, [], "#"
+        return 0.0, [], "#", ""
     except Exception as e:
-        return 0.0, [], "#"
+        return 0.0, [], "#", ""
 
 # --- MAIN APP ---
-st.title("Arbitrage Profit Master V14")
-st.markdown("**Live Research Dashboard (UPC First + Compare Links)**")
+st.title("Arbitrage Profit Master V15")
+st.markdown("**Live Research • Combined Search • Visual Match**")
 
 uploaded_file = st.file_uploader("Upload Keepa Export CSV", type=['csv'])
 
@@ -162,11 +170,11 @@ if uploaded_file:
         df['Title'] = df['Title'].fillna('Unknown Product')
 
         if api_key:
-            if "results_v14" not in st.session_state:
-                st.session_state["results_v14"] = []
+            if "results_v15" not in st.session_state:
+                st.session_state["results_v15"] = []
 
             if st.button("🚀 Start Live Research"):
-                st.session_state["results_v14"] = [] 
+                st.session_state["results_v15"] = [] 
                 progress = st.progress(0)
                 status = st.empty()
                 total = len(df)
@@ -178,8 +186,8 @@ if uploaded_file:
                     upc_val = row['UPC']
                     title_val = row['Title']
                     
-                    # Unpack 3 values now
-                    cogs, competitors, comp_link = search_cogs(upc_val, title_val, api_key)
+                    # Call V15 Search
+                    cogs, competitors, comp_link, found_img = search_cogs(upc_val, title_val, api_key)
                     
                     sell_price = row['Buy Box Price']
                     fba_fee = row['FBA Fee']
@@ -202,30 +210,29 @@ if uploaded_file:
                         "Profit_Raw": profit,
                         "ROI_Raw": roi,
                         "Competitors": competitors,
-                        "Compare_Link": comp_link # Store the compare link
+                        "Compare_Link": comp_link,
+                        "Found_Image": found_img # New Image
                     })
                     
                     progress.progress((i + 1) / total)
                     time.sleep(0.5) 
                 
-                st.session_state["results_v14"] = data_list
+                st.session_state["results_v15"] = data_list
                 status.success("Done!")
                 st.rerun()
 
-        if "results_v14" in st.session_state and st.session_state["results_v14"]:
-            results = st.session_state["results_v14"]
+        if "results_v15" in st.session_state and st.session_state["results_v15"]:
+            results = st.session_state["results_v15"]
             
             export_data = []
             for r in results:
-                comp_str = " | ".join([f"{c['store']}: ${c['price']:.2f} ({c['link']})" for c in r['Competitors']])
+                comp_str = " | ".join([f"{c['store']}: ${c['price']:.2f}" for c in r['Competitors']])
                 export_data.append({
                     "Title": r['Title'], "ASIN": r['ASIN'], "UPC": r['UPC'],
                     "Buy Box": f"${r['Buy_Box_Raw']:.2f}", "COGS": f"${r['COGS_Raw']:.2f}",
                     "Buffer (5%)": f"${r['Buffer_Raw']:.2f}", "FBA Fees": f"${r['Fees_Raw']:.2f}",
-                    "Ref Fees": f"${r['Ref_Fee_Raw']:.2f}", "Net Profit": f"${r['Profit_Raw']:.2f}",
-                    "ROI": f"{r['ROI_Raw']:.2f}%", 
-                    "Compare Link": r['Compare_Link'], # Added to CSV
-                    "Competitors": comp_str
+                    "Net Profit": f"${r['Profit_Raw']:.2f}", "ROI": f"{r['ROI_Raw']:.2f}%", 
+                    "Compare Link": r['Compare_Link'], "Competitors": comp_str
                 })
             
             col1, col2 = st.columns([1, 4])
@@ -236,27 +243,36 @@ if uploaded_file:
                 if show_profitable_only and p['Profit_Raw'] <= 0: continue
                 p_cls = "profit-pos" if p['Profit_Raw'] > 0 else "profit-neg"
                 p_sign = "+" if p['Profit_Raw'] > 0 else ""
-                
                 amz_url = f"https://www.amazon.com/dp/{p['ASIN']}"
+                
+                # --- VISUAL VERIFICATION LOGIC ---
+                # Default "Placeholder" if no image found
+                found_img_src = p['Found_Image'] if p['Found_Image'] else "https://via.placeholder.com/80?text=No+Img"
                 
                 comp_html = ""
                 if p['Competitors']:
                     for c in p['Competitors']:
-                        target_link = c['link']
-                        if target_link and target_link != "#":
-                            comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{target_link}' target='_blank' class='comp-link'>${c['price']:.2f} ↗</a></div>"
-                        else:
-                            comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <span style='font-weight:bold; font-size:11px;'>${c['price']:.2f}</span></div>"
+                        target_link = c['link'] if c['link'] else "#"
+                        comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{target_link}' target='_blank' class='comp-link'>${c['price']:.2f} ↗</a></div>"
                 else: comp_html = "<span style='color:#cbd5e1; font-size:11px;'>No Matches</span>"
 
-                # New "Compare All" Button logic
                 compare_btn_html = ""
                 if p['Compare_Link'] and p['Compare_Link'] != "#":
-                     compare_btn_html = f"""<a href="{p['Compare_Link']}" target="_blank" class="compare-btn">🔎 Compare All Prices</a>"""
+                     compare_btn_html = f"""<a href="{p['Compare_Link']}" target="_blank" class="compare-btn">🔎 Compare All</a>"""
 
                 st.markdown(f"""
                 <div class="product-card">
-                    <div class="col-img"><div class="img-container"><img src="{p['Image']}" class="product-img"></div></div>
+                    <div class="img-wrapper">
+                        <div class="img-box">
+                            <div class="img-label">AMAZON</div>
+                            <img src="{p['Image']}" class="product-img">
+                        </div>
+                        <div class="img-box">
+                            <div class="img-label">FOUND</div>
+                            <img src="{found_img_src}" class="product-img">
+                        </div>
+                    </div>
+                    
                     <div class="col-details">
                         <div class="title-text"><a href="{amz_url}" target="_blank" style="color:#1e293b; text-decoration:none;">{p['Title']}</a></div>
                         <div><span class="badge">ASIN: {p['ASIN']}</span><span class="badge">UPC: {p['UPC']}</span></div>

@@ -4,7 +4,7 @@ import requests
 import time
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="Arbitrage Profit Master V10", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Arbitrage Profit Master V11", page_icon="💰", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -33,12 +33,18 @@ st.markdown("""
 
     .title-text { font-weight: 700; color: #1e293b; font-size: 14px; margin-bottom: 6px; }
     .badge { background: #f8fafc; color: #64748b; padding: 2px 5px; border-radius: 4px; font-size: 10px; border: 1px solid #e2e8f0; margin-right: 4px; }
-    .price-main { font-size: 16px; font-weight: 800; color: #0f172a; }
+    
+    /* Price Links */
+    .price-link { font-size: 16px; font-weight: 800; color: #0f172a; text-decoration: none; border-bottom: 1px dotted #cbd5e1; }
+    .price-link:hover { color: #2563eb; border-bottom: 1px solid #2563eb; }
+    
     .fee-badge { font-size: 10px; color: #ef4444; background: #fef2f2; padding: 1px 5px; border-radius: 3px; border: 1px solid #fee2e2; }
     .profit-pos { color: #10b981; font-weight: 800; font-size: 16px; }
     .profit-neg { color: #ef4444; font-weight: 800; font-size: 16px; }
-    a { text-decoration: none; color: #2563eb; }
-    a:hover { text-decoration: underline; }
+    
+    /* Competitor Links */
+    .comp-link { font-weight:bold; font-size:11px; color:#2563eb; text-decoration:none; }
+    .comp-link:hover { text-decoration:underline; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,6 +82,7 @@ def search_cogs(query, api_key):
                 price = item.get('extracted_price', 0.0)
                 if price == 0.0: continue
                 store = item.get('source', 'Unknown')
+                # Capture the deep link to the product
                 link = item.get('link', '#')
                 
                 if not any(x in store.lower() for x in excluded):
@@ -87,7 +94,7 @@ def search_cogs(query, api_key):
     except: return 0.0, []
 
 # --- MAIN APP ---
-st.title("Arbitrage Profit Master V10")
+st.title("Arbitrage Profit Master V11")
 st.markdown("**Live Research Dashboard**")
 
 uploaded_file = st.file_uploader("Upload Keepa Export CSV", type=['csv'])
@@ -114,11 +121,11 @@ if uploaded_file:
         df['Title'] = df['Title'].fillna('Unknown Product')
 
         if api_key:
-            if "results_v10" not in st.session_state:
-                st.session_state["results_v10"] = []
+            if "results_v11" not in st.session_state:
+                st.session_state["results_v11"] = []
 
             if st.button("🚀 Start Live Research"):
-                st.session_state["results_v10"] = [] 
+                st.session_state["results_v11"] = [] 
                 progress = st.progress(0)
                 status = st.empty()
                 total = len(df)
@@ -132,7 +139,7 @@ if uploaded_file:
                     
                     sell_price = row['Buy Box Price']
                     fba_fee = row['FBA Fee']
-                    ref_fee = sell_price * 0.15 # Est 15% ref fee
+                    ref_fee = sell_price * 0.15 
                     buffer = cogs * 0.05
                     total_expenses = cogs + buffer + fba_fee + ref_fee
                     profit = sell_price - total_expenses
@@ -156,17 +163,18 @@ if uploaded_file:
                     progress.progress((i + 1) / total)
                     time.sleep(0.2)
                 
-                st.session_state["results_v10"] = data_list
+                st.session_state["results_v11"] = data_list
                 status.success("Done!")
                 st.rerun()
 
-        if "results_v10" in st.session_state and st.session_state["results_v10"]:
-            results = st.session_state["results_v10"]
+        if "results_v11" in st.session_state and st.session_state["results_v11"]:
+            results = st.session_state["results_v11"]
             
             # Export
             export_data = []
             for r in results:
-                comp_str = " | ".join([f"{c['store']}: ${c['price']:.2f}" for c in r['Competitors']])
+                # Competitor Links included in CSV for reference
+                comp_str = " | ".join([f"{c['store']}: ${c['price']:.2f} ({c['link']})" for c in r['Competitors']])
                 export_data.append({
                     "Title": r['Title'], "ASIN": r['ASIN'], "UPC": r['UPC'],
                     "Buy Box": f"${r['Buy_Box_Raw']:.2f}", "COGS": f"${r['COGS_Raw']:.2f}",
@@ -184,22 +192,26 @@ if uploaded_file:
                 p_cls = "profit-pos" if p['Profit_Raw'] > 0 else "profit-neg"
                 p_sign = "+" if p['Profit_Raw'] > 0 else ""
                 
+                # Construct Amazon Link
+                amz_url = f"https://www.amazon.com/dp/{p['ASIN']}"
+                
                 comp_html = ""
                 if p['Competitors']:
                     for c in p['Competitors']:
-                        comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{c['link']}' target='_blank' style='font-weight:bold; font-size:11px;'>${c['price']:.2f}</a></div>"
+                        # DEEP LINK: c['link'] comes directly from API's product page URL
+                        comp_html += f"<div><span style='color:#64748b; font-size:11px;'>{c['store']}</span> <a href='{c['link']}' target='_blank' class='comp-link'>${c['price']:.2f} ↗</a></div>"
                 else: comp_html = "<span style='color:#cbd5e1; font-size:11px;'>No Matches</span>"
 
                 st.markdown(f"""
                 <div class="product-card">
                     <div class="col-img"><div class="img-container"><img src="{p['Image']}" class="product-img"></div></div>
                     <div class="col-details">
-                        <div class="title-text">{p['Title']}</div>
+                        <div class="title-text"><a href="{amz_url}" target="_blank" style="color:#1e293b; text-decoration:none;">{p['Title']}</a></div>
                         <div><span class="badge">ASIN: {p['ASIN']}</span><span class="badge">UPC: {p['UPC']}</span></div>
                     </div>
                     <div class="col-amazon">
                         <div style="font-size:10px; color:#64748b;">Buy Box</div>
-                        <div class="price-main">${p['Buy_Box_Raw']:.2f}</div>
+                        <a href="{amz_url}" target="_blank" class="price-link">${p['Buy_Box_Raw']:.2f}</a>
                         <div class="fee-badge">-${p['Fees_Raw']:.2f} FBA</div>
                     </div>
                     <div class="col-cogs">
